@@ -1008,22 +1008,26 @@ function loadVoices(){
   availableVoices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
   const english = availableVoices.filter(v=>/^en/i.test(v.lang));
   const list = english.length ? english : availableVoices;
-  voiceSelect.innerHTML = '';
-  list.forEach((v,i)=>{
-    const opt = new Option(v.name + ' (' + v.lang + ')', i);
-    voiceSelect.appendChild(opt);
-  });
+  if(voiceSelect){
+    voiceSelect.innerHTML = '';
+    list.forEach((v,i)=>{
+      const opt = new Option(v.name + ' (' + v.lang + ')', i);
+      voiceSelect.appendChild(opt);
+    });
+    voiceSelect._list = list;
+  }
   chosenVoice = list[0] || null;
-  voiceSelect._list = list;
 }
 if('speechSynthesis' in window){
   loadVoices();
   window.speechSynthesis.onvoiceschanged = loadVoices;
 }
-voiceSelect.addEventListener('change', ()=>{
-  const list = voiceSelect._list || [];
-  chosenVoice = list[+voiceSelect.value] || null;
-});
+if(voiceSelect){
+  voiceSelect.addEventListener('change', ()=>{
+    const list = voiceSelect._list || [];
+    chosenVoice = list[+voiceSelect.value] || null;
+  });
+}
 function speak(text){
   if(!state.voiceover || !('speechSynthesis' in window) || !text) return;
   window.speechSynthesis.cancel();

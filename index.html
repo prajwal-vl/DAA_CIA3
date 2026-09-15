@@ -474,50 +474,11 @@
       <div class="ba-title" style="color:var(--crit);">AFTER SHOCK</div>
       <div class="ba-metrics" id="baAfter"></div>
     </div>
+    <button id="rerunBtn" style="position:absolute;bottom:70px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg, var(--accent), var(--accent-2));color:var(--bg-deep);border:none;padding:14px 32px;border-radius:28px;font-family:var(--font);font-weight:700;font-size:14px;cursor:pointer;letter-spacing:.5px;box-shadow:0 10px 34px rgba(255,139,114,0.4);transition:transform .18s ease, filter .18s ease;">Re-run Simulation</button>
     <div class="caption">Illustrative simulation data — not real financial statistics</div>
   </div>
 
   <div id="timeline"></div>
-
-  <div id="controls">
-    <h4>SIMULATION CONTROLS</h4>
-    <div class="transport">
-      <button class="icon-btn primary" id="playBtn">▶ Play</button>
-      <button class="icon-btn" id="pauseBtn">⏸</button>
-      <button class="icon-btn" id="stepBtn">Step ⏭</button>
-    </div>
-    <div class="row">
-      <span>Speed</span>
-    </div>
-    <div class="speed-group" id="speedGroup">
-      <button class="speed-btn" data-speed="0.5">0.5×</button>
-      <button class="speed-btn active" data-speed="1">1×</button>
-      <button class="speed-btn" data-speed="2">2×</button>
-      <button class="speed-btn" data-speed="4">4×</button>
-    </div>
-    <hr class="sep">
-    <h4>SHOCK SCENARIO</h4>
-    <div class="field">
-      <label style="font-size:10.5px;color:var(--muted);">Shock node</label>
-      <select id="shockNode" style="margin-top:4px;"></select>
-    </div>
-    <div class="row" style="margin-top:10px;">
-      <span>Intensity</span><span id="shockPct" style="color:var(--accent);">40%</span>
-    </div>
-    <input type="range" id="shockIntensity" min="0" max="100" value="40">
-    <button class="icon-btn" id="triggerShockBtn" style="width:100%;margin-top:10px;">Trigger Shock</button>
-    <hr class="sep">
-    <h4>DISPLAY</h4>
-    <div class="toggle-row"><span>Show Path</span><div class="switch on" data-key="showPath"><div class="knob"></div></div></div>
-    <div class="toggle-row"><span>Show Matrix</span><div class="switch" data-key="showMatrix"><div class="knob"></div></div></div>
-    <div class="toggle-row"><span>Show Particles</span><div class="switch on" data-key="showParticles"><div class="knob"></div></div></div>
-    <div class="toggle-row"><span>Auto Camera</span><div class="switch on" data-key="autoCamera"><div class="knob"></div></div></div>
-    <div class="toggle-row"><span>Voiceover</span><div class="switch on" id="voiceoverSwitch" data-key="voiceover"><div class="knob"></div></div></div>
-    <div class="field" id="voiceField" style="margin-top:8px;">
-      <label style="font-size:10.5px;color:var(--muted);">Narrator voice</label>
-      <select id="voiceSelect" style="margin-top:4px;"></select>
-    </div>
-  </div>
 </div>
 
 <script>
@@ -1328,32 +1289,22 @@ function renderBeforeAfter(){
 }
 
 /* =========================================================
-   19. TOGGLES / SPEED / CAMERA
+   19. TOGGLES / CAMERA
    ========================================================= */
-document.querySelectorAll('.switch').forEach(sw=>{
-  sw.addEventListener('click', ()=>{
-    const key = sw.dataset.key;
-    state[key] = !state[key];
-    sw.classList.toggle('on', state[key]);
-    if(key==='showMatrix') setMatrixVisible(state.stageIndex>=4);
-    if(key==='voiceover' && !state.voiceover) stopSpeaking();
-  });
-});
-document.querySelectorAll('.speed-btn').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    document.querySelectorAll('.speed-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    state.speed = +btn.dataset.speed;
-  });
-});
 document.getElementById('motionToggle').addEventListener('click', function(){
   state.reducedMotion = !state.reducedMotion;
   this.classList.toggle('active', state.reducedMotion);
   document.body.classList.toggle('reduced-motion', state.reducedMotion);
   initBgParticles(); initFlowParticles();
 });
-document.getElementById('triggerShockBtn').addEventListener('click', ()=>{
-  gotoStage(6);
+document.getElementById('rerunBtn').addEventListener('click', ()=>{
+  stopSpeaking();
+  institutions.forEach(n=> state.nodeStatus[n.id]='healthy');
+  institutions.forEach(n=>applyNodeStatus(n.id));
+  state.fwPointer = 0;
+  gotoStage(0);
+  state.playing = true;
+  advanceLoop();
 });
 
 let dragging=false, dragStart={x:0,y:0}, camStart={x:0,y:0};
@@ -1448,7 +1399,6 @@ function stageFloydWarshall(){
   clearOverlays();
   setEdgeVisible(true); setNodesVisible(true);
   state.showMatrix = true;
-  document.querySelector('.switch[data-key="showMatrix"]').classList.add('on');
   setMatrixVisible(true);
   showNarrative('FLOYD–WARSHALL', 'Checking every possible shortcut', 'For each institution K, we ask: does routing through K make any path shorter?', 3400);
   speak("This is the Floyd-Warshall algorithm. For every pair of institutions, it asks a simple question, over and over: would routing through this next institution make the path shorter? It starts from the distances we already know, and infinity everywhere there's no direct connection. Then, one institution at a time, it looks for shortcuts.");
@@ -1555,23 +1505,6 @@ function gotoStage(i){
 /* =========================================================
    21. TRANSPORT CONTROLS
    ========================================================= */
-document.getElementById('playBtn').addEventListener('click', ()=>{
-  state.playing = true;
-  advanceLoop();
-});
-document.getElementById('pauseBtn').addEventListener('click', ()=>{
-  state.playing = false;
-  clearTimeout(state.autoTimer);
-  clearTimeout(fwAnimTimer);
-  stopSpeaking();
-});
-document.getElementById('stepBtn').addEventListener('click', ()=>{
-  if(state.stageIndex===4){ // Floyd-Warshall stage: step the algorithm
-    runFWStepAnimated(false);
-  } else {
-    gotoStage(state.stageIndex+1);
-  }
-});
 document.getElementById('restartBtn').addEventListener('click', ()=>{
   stopSpeaking();
   institutions.forEach(n=> state.nodeStatus[n.id]='healthy');
@@ -1622,7 +1555,6 @@ refreshTimeline();
 
 /* keyboard accessibility */
 window.addEventListener('keydown', (e)=>{
-  if(e.key===' '){ e.preventDefault(); document.getElementById(state.playing?'pauseBtn':'playBtn').click(); }
   if(e.key==='ArrowRight'){ gotoStage(state.stageIndex+1); }
   if(e.key==='ArrowLeft'){ gotoStage(state.stageIndex-1); }
 });

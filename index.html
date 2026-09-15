@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Systemic Network Simulator — Floyd–Warshall</title>
+<style>
+  :root{
+    --accent:#FFB09E;
+    --bg-deep:#17141A;
+    --bg-secondary:#242027;
+    --cream:#FFF4EF;
+    --peach-soft:#FFD4C8;
+    --peach-dark:#D97861;
+    --white:#FFFFFF;
+    --muted:#BEB5B2;
+    --ok:#7FBF8F;
+    --warn:#E8B84B;
+    --crit:#E24C4C;
+    --line:rgba(255,176,158,0.18);
+    --panel-bg:rgba(28,24,31,0.86);
+    --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;width:100%;height:100%;
+    background:var(--bg-deep);
+    color:var(--cream);
+    font-family:var(--font);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{position:fixed;inset:0;overflow:hidden;}
+
+  canvas#bgCanvas{position:absolute;inset:0;width:100%;height:100%;z-index:0;}
+
+  #stage{
+    position:absolute;inset:0;z-index:1;
+    display:flex;align-items:center;justify-content:center;
+  }
+  svg#graphSvg{width:100%;height:100%;display:block;}
+
+  /* ---------- Top bar ---------- */
+  #topbar{
+    position:absolute;top:0;left:0;right:0;z-index:10;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:22px 28px;
+    pointer-events:none;
+  }
+  #topbar .brand{
+    font-size:13px;letter-spacing:2.5px;color:var(--muted);
+    display:flex;align-items:center;gap:10px;
+    pointer-events:auto;
+  }
+  #topbar .brand .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);}
+  #topbar .right{display:flex;gap:10px;pointer-events:auto;}
+  .chip-btn{
+    background:var(--panel-bg);border:1px solid var(--line);color:var(--muted);
+    font-family:var(--font);font-size:12px;padding:7px 13px;border-radius:20px;cursor:pointer;
+    transition:all .2s ease;
+  }
+  .chip-btn:hover{color:var(--cream);border-color:var(--accent);}
+  .chip-btn.active{color:var(--bg-deep);background:var(--accent);border-color:var(--accent);}
+
+  /* ---------- Cinematic overlay text ---------- */
+  #narrative{
+    position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);
+    z-index:8;text-align:center;pointer-events:none;
+    max-width:780px;padding:0 20px;
+  }
+  #narrative .kicker{
+    font-size:13px;letter-spacing:3px;color:var(--accent);margin-bottom:14px;
+    opacity:0;transform:translateY(8px);
+    transition:opacity .7s ease, transform .7s ease;
+  }
+  #narrative .headline{
+    font-size:clamp(28px,4vw,52px);font-weight:600;line-height:1.15;color:var(--white);
+    opacity:0;transform:translateY(14px);
+    transition:opacity .8s ease .1s, transform .8s ease .1s;
+  }
+  #narrative .sub{
+    font-size:17px;color:var(--muted);margin-top:16px;line-height:1.5;
+    opacity:0;transform:translateY(10px);
+    transition:opacity .8s ease .25s, transform .8s ease .25s;
+  }
+  #narrative.show .kicker,#narrative.show .headline,#narrative.show .sub{opacity:1;transform:translateY(0);}
+
+  /* ---------- Timeline ---------- */
+  #timeline{
+    position:absolute;bottom:18px;left:50%;transform:translateX(-50%);
+    z-index:10;display:flex;gap:2px;background:var(--panel-bg);
+    border:1px solid var(--line);border-radius:14px;padding:8px;backdrop-filter:blur(6px);
+  }
+  .tl-item{
+    padding:8px 12px;border-radius:10px;cursor:pointer;font-size:11px;color:var(--muted);
+    display:flex;flex-direction:column;align-items:center;gap:3px;min-width:64px;
+    transition:background .2s ease,color .2s ease;
+  }
+  .tl-item .num{font-size:10px;letter-spacing:1px;opacity:.7;}
+  .tl-item .lbl{font-size:11px;letter-spacing:.5px;}
+  .tl-item.active{background:rgba(255,176,158,0.14);color:var(--accent);}
+  .tl-item.active .num{color:var(--accent);}
+  .tl-item.done{color:var(--cream);}
+  .tl-item:hover{color:var(--white);}
+
+  /* ---------- Controls panel ---------- */
+  #controls{
+    position:absolute;bottom:78px;right:20px;z-index:10;
+    background:var(--panel-bg);border:1px solid var(--line);border-radius:16px;
+    padding:16px;width:270px;backdrop-filter:blur(8px);
+    font-size:12px;
+    max-height:72vh;overflow-y:auto;
+  }
+  #controls h4{margin:0 0 10px;font-size:11px;letter-spacing:1.5px;color:var(--muted);font-weight:600;}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
+  .transport{display:flex;gap:6px;margin-bottom:12px;}
+  .icon-btn{
+    flex:1;background:var(--bg-secondary);border:1px solid var(--line);color:var(--cream);
+    border-radius:9px;padding:9px 0;cursor:pointer;font-size:13px;transition:all .15s ease;
+  }
+  .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .icon-btn.primary{background:var(--accent);color:var(--bg-deep);border-color:var(--accent);font-weight:600;}
+  .icon-btn.primary:hover{filter:brightness(1.08);}
+  select,input[type=range]{
+    background:var(--bg-secondary);color:var(--cream);border:1px solid var(--line);
+    border-radius:8px;padding:6px 8px;font-family:var(--font);font-size:12px;width:100%;
+  }
+  input[type=range]{padding:0;height:20px;accent-color:var(--accent);}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;}
+  .switch{
+    width:34px;height:19px;border-radius:10px;background:var(--bg-secondary);
+    border:1px solid var(--line);position:relative;cursor:pointer;flex-shrink:0;
+  }
+  .switch.on{background:var(--peach-dark);border-color:var(--accent);}
+  .switch .knob{
+    position:absolute;top:1px;left:1px;width:15px;height:15px;border-radius:50%;background:var(--cream);
+    transition:left .18s ease;
+  }
+  .switch.on .knob{left:16px;background:var(--white);}
+  .speed-group{display:flex;gap:5px;}
+  .speed-btn{
+    flex:1;padding:5px 0;border-radius:7px;border:1px solid var(--line);background:var(--bg-secondary);
+    color:var(--muted);cursor:pointer;font-size:11px;
+  }
+  .speed-btn.active{background:var(--accent);color:var(--bg-deep);border-color:var(--accent);font-weight:600;}
+  hr.sep{border:none;border-top:1px solid var(--line);margin:12px 0;}
+
+  /* ---------- Info / explainer panel (left) ---------- */
+  #explainer{
+    position:absolute;top:90px;left:20px;z-index:9;width:300px;
+    background:var(--panel-bg);border:1px solid var(--line);border-radius:16px;padding:16px 18px;
+    backdrop-filter:blur(8px);
+    opacity:0;transform:translateX(-12px);pointer-events:none;
+    transition:opacity .4s ease, transform .4s ease;
+  }
+  #explainer.show{opacity:1;transform:translateX(0);pointer-events:auto;}
+  #explainer .tag{font-size:10px;letter-spacing:2px;color:var(--accent);margin-bottom:6px;}
+  #explainer .title{font-size:16px;font-weight:600;color:var(--white);margin-bottom:8px;}
+  #explainer .body{font-size:12.5px;color:var(--muted);line-height:1.55;}
+  #explainer .calc{
+    margin-top:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+    background:var(--bg-secondary);border-radius:9px;padding:9px 11px;color:var(--peach-soft);
+  }
+  #explainer .calc .old{color:var(--muted);text-decoration:line-through;margin-right:6px;}
+  #explainer .calc .new{color:var(--accent);font-weight:700;}
+
+  /* ---------- Node hover card ---------- */
+  #nodeCard{
+    position:absolute;z-index:15;background:var(--panel-bg);border:1px solid var(--accent);
+    border-radius:12px;padding:12px 14px;width:200px;pointer-events:none;
+    opacity:0;transition:opacity .15s ease;backdrop-filter:blur(6px);
+    font-size:12px;
+  }
+  #nodeCard.show{opacity:1;}
+  #nodeCard .name{font-size:14px;font-weight:600;color:var(--white);margin-bottom:6px;}
+  #nodeCard .kv{display:flex;justify-content:space-between;color:var(--muted);padding:2px 0;}
+  #nodeCard .kv b{color:var(--cream);font-weight:500;}
+  .status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;}
+
+  /* ---------- Matrix panel ---------- */
+  #matrixPanel{
+    position:absolute;z-index:9;top:90px;right:305px;
+    background:var(--panel-bg);border:1px solid var(--line);border-radius:16px;
+    padding:16px;backdrop-filter:blur(8px);
+    opacity:0;transform:scale(.97);pointer-events:none;transition:opacity .3s ease, transform .3s ease;
+    max-height:70vh;overflow:auto;
+  }
+  #matrixPanel.show{opacity:1;transform:scale(1);pointer-events:auto;}
+  #matrixPanel .k-label{font-size:11px;letter-spacing:1.5px;color:var(--accent);margin-bottom:10px;}
+  table.dist{border-collapse:collapse;font-size:11px;}
+  table.dist th,table.dist td{
+    width:34px;height:26px;text-align:center;border:1px solid var(--line);color:var(--muted);
+    transition:background .3s ease, color .3s ease;
+  }
+  table.dist th{color:var(--accent);font-weight:600;background:rgba(255,176,158,0.06);}
+  table.dist td{cursor:pointer;color:var(--cream);}
+  table.dist td.updated{background:rgba(255,176,158,0.35);color:var(--bg-deep);font-weight:700;}
+  table.dist td.k-row, table.dist td.k-col{background:rgba(255,176,158,0.1);}
+  table.dist td:hover{outline:1px solid var(--accent);}
+
+  /* ---------- Path finder ---------- */
+  #pathFinder{
+    position:absolute;z-index:9;top:90px;left:20px;
+    background:var(--panel-bg);border:1px solid var(--line);border-radius:16px;padding:16px 18px;
+    width:300px;backdrop-filter:blur(8px);
+    opacity:0;transform:translateX(-12px);pointer-events:none;transition:opacity .35s ease, transform .35s ease;
+  }
+  #pathFinder.show{opacity:1;transform:translateX(0);pointer-events:auto;}
+  #pathFinder h4{margin:0 0 10px;font-size:11px;letter-spacing:1.5px;color:var(--muted);}
+  #pathFinder .field{margin-bottom:8px;}
+  #pathFinder label{font-size:10.5px;color:var(--muted);display:block;margin-bottom:4px;}
+  #pathFinder .result{
+    margin-top:10px;font-size:12.5px;color:var(--peach-soft);line-height:1.5;
+    background:var(--bg-secondary);border-radius:9px;padding:9px 11px;display:none;
+  }
+  #pathFinder .result.show{display:block;}
+  #pathFinder .result b{color:var(--accent);}
+
+  /* ---------- Criticality ranking ---------- */
+  #ranking{
+    position:absolute;z-index:9;top:90px;left:50%;transform:translateX(-50%) translateY(10px);
+    background:var(--panel-bg);border:1px solid var(--line);border-radius:16px;padding:18px 22px;
+    min-width:340px;backdrop-filter:blur(8px);
+    opacity:0;pointer-events:none;transition:opacity .4s ease, transform .4s ease;
+  }
+  #ranking.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto;}
+  #ranking h4{margin:0 0 4px;font-size:14px;color:var(--white);}
+  #ranking .note{font-size:10.5px;color:var(--muted);margin-bottom:12px;}
+  .rank-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;opacity:0;transform:translateY(8px);transition:opacity .5s ease,transform .5s ease;}
+  .rank-row.in{opacity:1;transform:translateY(0);}
+  .rank-row .pos{width:18px;color:var(--muted);font-size:12px;}
+  .rank-row .rname{width:120px;font-size:12.5px;color:var(--cream);}
+  .rank-row .bar-track{flex:1;height:7px;background:var(--bg-secondary);border-radius:4px;overflow:hidden;}
+  .rank-row .bar-fill{height:100%;background:linear-gradient(90deg,var(--peach-dark),var(--accent));width:0%;transition:width 1s cubic-bezier(.2,.8,.2,1);}
+  .rank-row .pct{width:38px;text-align:right;font-size:12px;color:var(--accent);font-weight:600;}
+
+  /* ---------- Before/After ---------- */
+  #beforeAfter{
+    position:absolute;z-index:12;inset:0;display:none;
+    background:rgba(23,20,26,0.92);
+  }
+  #beforeAfter.show{display:flex;}
+  .ba-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;padding:20px;}
+  .ba-col.before{border-right:1px solid var(--line);}
+  .ba-title{font-size:13px;letter-spacing:2px;color:var(--accent);margin-bottom:18px;}
+  .ba-metrics{display:flex;flex-direction:column;gap:10px;width:260px;}
+  .ba-metric{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:8px;}
+  .ba-metric b{color:var(--cream);font-size:15px;}
+  #beforeAfter .caption{
+    position:absolute;bottom:26px;left:50%;transform:translateX(-50%);
+    font-size:11.5px;color:var(--muted);letter-spacing:.5px;
+  }
+
+  /* ---------- Shock control extras ---------- */
+  .flow-chain{
+    position:absolute;left:50%;bottom:100px;transform:translateX(-50%);
+    display:flex;gap:8px;align-items:center;z-index:9;opacity:0;transition:opacity .5s ease;
+  }
+  .flow-chain.show{opacity:1;}
+  .flow-chain .fc-item{font-size:12px;color:var(--muted);padding:6px 12px;border:1px solid var(--line);border-radius:20px;background:var(--panel-bg);}
+  .flow-chain .fc-item.active{color:var(--bg-deep);background:var(--accent);border-color:var(--accent);font-weight:600;}
+  .flow-chain .arrow{color:var(--muted);}
+
+  /* ---------- Skip / start ---------- */
+  #startOverlay{
+    position:absolute;inset:0;z-index:30;background:var(--bg-deep);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+  }
+  #startOverlay h1{font-size:clamp(24px,3.4vw,40px);color:var(--white);font-weight:600;letter-spacing:.5px;text-align:center;}
+  #startOverlay p{color:var(--muted);font-size:14px;max-width:460px;text-align:center;line-height:1.6;}
+  #startBtn{
+    background:var(--accent);color:var(--bg-deep);border:none;padding:14px 30px;border-radius:26px;
+    font-family:var(--font);font-weight:600;font-size:14px;cursor:pointer;letter-spacing:.5px;
+    transition:transform .15s ease, filter .15s ease;
+  }
+  #startBtn:hover{transform:translateY(-2px);filter:brightness(1.06);}
+
+  ::-webkit-scrollbar{width:6px;}
+  ::-webkit-scrollbar-thumb{background:var(--peach-dark);border-radius:4px;}
+
+  @media (max-width: 980px){
+    #controls{width:220px;}
+    #explainer,#pathFinder{width:230px;}
+    #matrixPanel{right:20px;top:340px;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+  .reduced-motion .particle{display:none;}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="bgCanvas"></canvas>
+
+  <div id="startOverlay">
+    <div class="brand" style="color:var(--muted);font-size:12px;letter-spacing:3px;">SYSTEMIC NETWORK SIMULATOR</div>
+    <h1>One Financial System.<br>Everything is connected.</h1>
+    <p>A cinematic walkthrough of the Floyd–Warshall algorithm — how exposure travels between institutions, which ones quietly hold the network together, and what happens when one of them breaks.</p>
+    <button id="startBtn">Begin Simulation</button>
+  </div>
+
+  <div id="topbar">
+    <div class="brand"><span class="dot"></span> SYSTEMIC NETWORK SIMULATOR</div>
+    <div class="right">
+      <button class="chip-btn" id="motionToggle">Reduce Motion</button>
+      <button class="chip-btn" id="restartBtn">Restart</button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <svg id="graphSvg" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L8,3 z" fill="var(--muted)"></path>
+        </marker>
+        <marker id="arrow-active" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L8,3 z" fill="var(--accent)"></path>
+        </marker>
+        <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="4.2" result="blur"></feGaussianBlur>
+          <feMerge>
+            <feMergeNode in="blur"></feMergeNode>
+            <feMergeNode in="SourceGraphic"></feMergeNode>
+          </feMerge>
+        </filter>
+      </defs>
+      <g id="cameraGroup">
+        <g id="edgesLayer"></g>
+        <g id="particlesLayer"></g>
+        <g id="nodesLayer"></g>
+      </g>
+    </svg>
+  </div>
+
+  <div id="narrative">
+    <div class="kicker" id="narKicker"></div>
+    <div class="headline" id="narHeadline"></div>
+    <div class="sub" id="narSub"></div>
+  </div>
+
+  <div id="explainer">
+    <div class="tag" id="expTag">STEP</div>
+    <div class="title" id="expTitle">—</div>
+    <div class="body" id="expBody">—</div>
+    <div class="calc" id="expCalc" style="display:none;"></div>
+  </div>
+
+  <div id="pathFinder">
+    <h4>FIND SHORTEST EXPOSURE PATH</h4>
+    <div class="field">
+      <label>From</label>
+      <select id="pfFrom"></select>
+    </div>
+    <div class="field">
+      <label>To</label>
+      <select id="pfTo"></select>
+    </div>
+    <button class="icon-btn primary" id="pfBtn" style="width:100%;">Find Path</button>
+    <div class="result" id="pfResult"></div>
+  </div>
+
+  <div id="matrixPanel">
+    <div class="k-label" id="matrixK">DISTANCE MATRIX</div>
+    <table class="dist" id="distTable"></table>
+  </div>
+
+  <div id="ranking">
+    <h4>Who Connects the System?</h4>
+    <div class="note">Simulation Criticality Score — how often each institution sits on a shortest exposure path. Not a real financial risk metric.</div>
+    <div id="rankList"></div>
+  </div>
+
+  <div class="flow-chain" id="flowChain"></div>
+
+  <div id="nodeCard"></div>
+
+  <div id="beforeAfter">
+    <div class="ba-col before">
+      <div class="ba-title">BEFORE SHOCK</div>
+      <div class="ba-metrics" id="baBefore"></div>
+    </div>
+    <div class="ba-col after">
+      <div class="ba-title" style="color:var(--crit);">AFTER SHOCK</div>
+      <div class="ba-metrics" id="baAfter"></div>
+    </div>
+    <div class="caption">Illustrative simulation data — not real financial statistics</div>
+  </div>
+
+  <div id="timeline"></div>
+
+  <div id="controls">
+    <h4>SIMULATION CONTROLS</h4>
+    <div class="transport">
+      <button class="icon-btn primary" id="playBtn">▶ Play</button>
+      <button class="icon-btn" id="pauseBtn">⏸</button>
+      <button class="icon-btn" id="stepBtn">Step ⏭</button>
+    </div>
+    <div class="row">
+      <span>Speed</span>
+    </div>
+    <div class="speed-group" id="speedGroup">
+      <button class="speed-btn" data-speed="0.5">0.5×</button>
+      <button class="speed-btn active" data-speed="1">1×</button>
+      <button class="speed-btn" data-speed="2">2×</button>
+      <button class="speed-btn" data-speed="4">4×</button>
+    </div>
+    <hr class="sep">
+    <h4>SHOCK SCENARIO</h4>
+    <div class="field">
+      <label style="font-size:10.5px;color:var(--muted);">Shock node</label>
+      <select id="shockNode" style="margin-top:4px;"></select>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <span>Intensity</span><span id="shockPct" style="color:var(--accent);">40%</span>
+    </div>
+    <input type="range" id="shockIntensity" min="0" max="100" value="40">
+    <button class="icon-btn" id="triggerShockBtn" style="width:100%;margin-top:10px;">Trigger Shock</button>
+    <hr class="sep">
+    <h4>DISPLAY</h4>
+    <div class="toggle-row"><span>Show Path</span><div class="switch on" data-key="showPath"><div class="knob"></div></div></div>
+    <div class="toggle-row"><span>Show Matrix</span><div class="switch" data-key="showMatrix"><div class="knob"></div></div></div>
+    <div class="toggle-row"><span>Show Particles</span><div class="switch on" data-key="showParticles"><div class="knob"></div></div></div>
+    <div class="toggle-row"><span>Auto Camera</span><div class="switch on" data-key="autoCamera"><div class="knob"></div></div></div>
+    <div class="toggle-row"><span>Voiceover</span><div class="switch on" id="voiceoverSwitch" data-key="voiceover"><div class="knob"></div></div></div>
+    <div class="field" id="voiceField" style="margin-top:8px;">
+      <label style="font-size:10.5px;color:var(--muted);">Narrator voice</label>
+      <select id="voiceSelect" style="margin-top:4px;"></select>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* =========================================================
+   1. DATA
+   ========================================================= */
+const institutions = [
+  { id:"A", name:"Alpha Bank",      short:"ALPH" },
+  { id:"B", name:"Nova Capital",    short:"NOVA" },
+  { id:"C", name:"Meridian Bank",   short:"MRDN" },
+  { id:"D", name:"Apex Finance",    short:"APEX" },
+  { id:"E", name:"Horizon Fund",    short:"HORZ" },
+  { id:"F", name:"Vertex Bank",     short:"VERT" },
+  { id:"G", name:"Sterling Capital",short:"STRL" },
+  { id:"H", name:"Unity Finance",   short:"UNTY" },
+  { id:"I", name:"Atlas Bank",      short:"ATLS" }
+];
+const N = institutions.length;
+const INF = Infinity;
+
+// directed weighted exposure edges [from, to, weight]
+const rawEdges = [
+  ["A","B",4], ["A","C",7], ["A","D",12],
+  ["B","D",2], ["B","E",6], ["B","G",9],
+  ["C","E",3], ["C","D",8], ["C","G",6],
+  ["D","F",5], ["D","G",4],
+  ["E","F",2], ["E","H",5], ["E","G",7],
+  ["F","I",3],
+  ["G","H",3], ["G","I",2],
+  ["H","I",4]
+];
+
+const idx = {}; institutions.forEach((n,i)=>idx[n.id]=i);
+
+function buildBaseMatrix(){
+  const m = Array.from({length:N},()=>Array(N).fill(INF));
+  for(let i=0;i<N;i++) m[i][i]=0;
+  rawEdges.forEach(([a,b,w])=>{ m[idx[a]][idx[b]] = w; });
+  return m;
+}
+const baseMatrix = buildBaseMatrix();
+
+/* =========================================================
+   2. STATE
+   ========================================================= */
+const state = {
+  stageIndex: 0,
+  playing: false,
+  speed: 1,
+  showPath: true,
+  showMatrix: false,
+  showParticles: true,
+  autoCamera: true,
+  voiceover: true,
+  reducedMotion: false,
+  shockNodeId: "B",
+  shockIntensity: 40,
+  nodeStatus: {}, // id -> 'healthy'|'warning'|'critical'|'failed'
+  camera: {x:0,y:0,scale:1},
+  fwSteps: [],
+  fwPointer: 0,
+  fwFinalDist: null,
+  fwFinalNext: null,
+  criticality: null,
+  autoTimer: null,
+};
+institutions.forEach(n=>state.nodeStatus[n.id]='healthy');
+
+const stages = [
+  {key:"INTRO", num:"00", label:"INTRO"},
+  {key:"NETWORK_REVEAL", num:"01", label:"NETWORK"},
+  {key:"WEIGHTED_GRAPH", num:"02", label:"EXPOSURE"},
+  {key:"PATH_PROBLEM", num:"03", label:"PATHWAYS"},
+  {key:"FLOYD_WARSHALL", num:"04", label:"FLOYD–WARSHALL"},
+  {key:"CRITICALITY", num:"05", label:"CRITICALITY"},
+  {key:"SHOCK", num:"06", label:"SHOCK"},
+  {key:"PROPAGATION", num:"07", label:"PROPAGATION"},
+  {key:"SYSTEMIC_RISK", num:"08", label:"SYSTEMIC RISK"},
+];
+
+/* =========================================================
+   3. LAYOUT — node positions (circle layout)
+   ========================================================= */
+const VBW=1000, VBH=620, CX=500, CY=300, R=210;
+institutions.forEach((n,i)=>{
+  const angle = -Math.PI/2 + (i / N) * Math.PI*2;
+  n.x = CX + R*Math.cos(angle);
+  n.y = CY + R*Math.sin(angle);
+});
+
+/* =========================================================
+   4. SVG GRAPH ENGINE
+   ========================================================= */
+const svgNS = "http://www.w3.org/2000/svg";
+const edgesLayer = document.getElementById('edgesLayer');
+const nodesLayer = document.getElementById('nodesLayer');
+const particlesLayer = document.getElementById('particlesLayer');
+const cameraGroup = document.getElementById('cameraGroup');
+
+function el(tag, attrs){
+  const e = document.createElementNS(svgNS, tag);
+  for(const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+const edgeElements = {}; // "A-B" -> {line, glowLine, label}
+rawEdges.forEach(([a,b,w])=>{
+  const na = institutions[idx[a]], nb = institutions[idx[b]];
+  const key = a+"-"+b;
+  const strokeW = 1.2 + (w/12)*3.4;
+  const line = el('line', {
+    x1:na.x, y1:na.y, x2:nb.x, y2:nb.y,
+    stroke:'var(--line)', 'stroke-width':strokeW,
+    'marker-end':'url(#arrow)', opacity:0
+  });
+  edgesLayer.appendChild(line);
+
+  const mx = (na.x+nb.x)/2, my=(na.y+nb.y)/2;
+  const label = el('text', {
+    x:mx, y:my-6, 'text-anchor':'middle', fill:'var(--muted)',
+    'font-size':'11', 'font-family':'var(--font)', opacity:0
+  });
+  label.textContent = w;
+  edgesLayer.appendChild(label);
+
+  edgeElements[key] = {line, label, w, from:a, to:b, baseWidth:strokeW};
+});
+
+const nodeElements = {};
+institutions.forEach(n=>{
+  const g = el('g', {class:'node-g', 'data-id':n.id, style:'cursor:pointer;opacity:0;'});
+  const halo = el('circle', {cx:n.x, cy:n.y, r:34, fill:'var(--accent)', opacity:0.0, filter:'url(#glow)'});
+  const circle = el('circle', {cx:n.x, cy:n.y, r:26, fill:'var(--bg-secondary)', stroke:'var(--accent)', 'stroke-width':2});
+  const label = el('text', {x:n.x, y:n.y+4, 'text-anchor':'middle', fill:'var(--cream)', 'font-size':'11','font-weight':'600'});
+  label.textContent = n.short;
+  const nameLabel = el('text', {x:n.x, y:n.y+46, 'text-anchor':'middle', fill:'var(--muted)', 'font-size':'11'});
+  nameLabel.textContent = n.name;
+
+  g.appendChild(halo); g.appendChild(circle); g.appendChild(label); g.appendChild(nameLabel);
+  nodesLayer.appendChild(g);
+  nodeElements[n.id] = {g, halo, circle, label, nameLabel, breathe:Math.random()*Math.PI*2};
+
+  g.addEventListener('mouseenter', (e)=>showNodeCard(n.id, e));
+  g.addEventListener('mousemove', (e)=>positionNodeCard(e));
+  g.addEventListener('mouseleave', hideNodeCard);
+  g.addEventListener('click', ()=>focusNode(n.id));
+});
+
+function setEdgeVisible(v){
+  Object.values(edgeElements).forEach(e=>{
+    e.line.setAttribute('opacity', v?1:0);
+    e.label.setAttribute('opacity', v?1:0);
+  });
+}
+function setNodesVisible(v){
+  Object.values(nodeElements).forEach(n=>n.g.style.opacity = v?1:0);
+}
+
+/* ---- node status coloring ---- */
+const statusColor = {healthy:'var(--accent)', warning:'var(--warn)', critical:'var(--crit)', failed:'#5a2323'};
+function applyNodeStatus(id){
+  const st = state.nodeStatus[id];
+  const c = statusColor[st] || 'var(--accent)';
+  nodeElements[id].circle.setAttribute('stroke', c);
+  nodeElements[id].halo.setAttribute('fill', c);
+}
+institutions.forEach(n=>applyNodeStatus(n.id));
+
+/* ---- dim / highlight helpers ---- */
+function resetHighlight(){
+  Object.values(edgeElements).forEach(e=>{
+    e.line.setAttribute('stroke','var(--line)');
+    e.line.setAttribute('marker-end','url(#arrow)');
+    e.line.setAttribute('stroke-width', e.baseWidth);
+    e.line.style.opacity = edgesLayer.style.display==='none'?0:e.line.getAttribute('opacity');
+  });
+  Object.values(nodeElements).forEach(n=>{ n.g.style.opacity = n.g.style.opacity==='0'?'0':'1'; n.g.style.filter='none'; });
+}
+function highlightPath(pathIds){
+  const pathKeys = new Set();
+  for(let i=0;i<pathIds.length-1;i++) pathKeys.add(pathIds[i]+"-"+pathIds[i+1]);
+  Object.entries(edgeElements).forEach(([key,e])=>{
+    if(pathKeys.has(key)){
+      e.line.setAttribute('stroke','var(--accent)');
+      e.line.setAttribute('marker-end','url(#arrow-active)');
+      e.line.setAttribute('stroke-width', e.baseWidth+2.2);
+    } else {
+      e.line.setAttribute('stroke','rgba(190,181,178,0.12)');
+      e.line.setAttribute('marker-end','url(#arrow)');
+    }
+  });
+  Object.entries(nodeElements).forEach(([id,n])=>{
+    n.g.style.filter = pathIds.includes(id) ? 'none' : 'grayscale(0.6) opacity(0.35)';
+  });
+}
+
+/* =========================================================
+   5. FLOYD–WARSHALL (real implementation + recorded steps)
+   ========================================================= */
+function computeFloydWarshallSteps(){
+  const dist = baseMatrix.map(r=>r.slice());
+  const next = Array.from({length:N},()=>Array(N).fill(null));
+  for(let i=0;i<N;i++) for(let j=0;j<N;j++){
+    if(i!==j && dist[i][j]<INF) next[i][j]=j;
+  }
+  const steps = [];
+  for(let k=0;k<N;k++){
+    let changesThisK = [];
+    for(let i=0;i<N;i++){
+      for(let j=0;j<N;j++){
+        if(i===j || i===k || j===k) continue;
+        if(dist[i][k]+dist[k][j] < dist[i][j]){
+          const oldV = dist[i][j];
+          dist[i][j] = dist[i][k]+dist[k][j];
+          next[i][j] = next[i][k];
+          changesThisK.push({i,j,k,oldV,newV:dist[i][j], viaIk:dist[i][k], viaKj:dist[k][j]});
+        }
+      }
+    }
+    steps.push({k, changes:changesThisK, snapshot: dist.map(r=>r.slice())});
+  }
+  return {steps, finalDist:dist, finalNext:next};
+}
+const fwResult = computeFloydWarshallSteps();
+state.fwSteps = fwResult.steps;
+state.fwFinalDist = fwResult.finalDist;
+state.fwFinalNext = fwResult.finalNext;
+
+function reconstructPath(i,j){
+  const next = state.fwFinalNext;
+  if(next[i][j]===null) return null;
+  const path=[i];
+  let cur=i;
+  let guard=0;
+  while(cur!==j && guard++<40){
+    cur = next[cur][j];
+    path.push(cur);
+  }
+  return path.map(k=>institutions[k].id);
+}
+
+/* =========================================================
+   6. CRITICALITY SCORE
+   ========================================================= */
+function computeCriticality(){
+  const counts = Array(N).fill(0);
+  let totalPairs=0;
+  for(let i=0;i<N;i++){
+    for(let j=0;j<N;j++){
+      if(i===j) continue;
+      const path = (function(){
+        const next = state.fwFinalNext;
+        if(next[i][j]===null) return null;
+        const p=[i]; let cur=i, g=0;
+        while(cur!==j && g++<40){ cur=next[cur][j]; p.push(cur); }
+        return p;
+      })();
+      if(!path) continue;
+      totalPairs++;
+      for(let m=1;m<path.length-1;m++) counts[path[m]]++;
+    }
+  }
+  const max = Math.max(1, ...counts);
+  return institutions.map((n,i)=>({id:n.id, name:n.name, count:counts[i], pct: Math.round((counts[i]/max)*100)}))
+    .sort((a,b)=>b.count-a.count);
+}
+
+/* =========================================================
+   7. BACKGROUND CANVAS — ambient particles
+   ========================================================= */
+const bgCanvas = document.getElementById('bgCanvas');
+const bgCtx = bgCanvas.getContext('2d');
+let bgParticles = [];
+function resizeCanvas(){
+  bgCanvas.width = window.innerWidth;
+  bgCanvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+function initBgParticles(){
+  bgParticles = [];
+  const count = state.reducedMotion ? 20 : 70;
+  for(let i=0;i<count;i++){
+    bgParticles.push({
+      x: Math.random()*bgCanvas.width,
+      y: Math.random()*bgCanvas.height,
+      r: Math.random()*1.6+0.4,
+      vy: -(Math.random()*0.15+0.03),
+      vx: (Math.random()-0.5)*0.05,
+      a: Math.random()*0.4+0.08
+    });
+  }
+}
+initBgParticles();
+function drawBg(){
+  bgCtx.clearRect(0,0,bgCanvas.width,bgCanvas.height);
+  bgCtx.fillStyle = '#17141A';
+  bgCtx.fillRect(0,0,bgCanvas.width,bgCanvas.height);
+  bgParticles.forEach(p=>{
+    p.x += p.vx; p.y += p.vy;
+    if(p.y< -5) p.y = bgCanvas.height+5;
+    if(p.x<-5) p.x = bgCanvas.width+5;
+    if(p.x>bgCanvas.width+5) p.x=-5;
+    bgCtx.beginPath();
+    bgCtx.fillStyle = `rgba(255,176,158,${p.a})`;
+    bgCtx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    bgCtx.fill();
+  });
+}
+
+/* =========================================================
+   8. EDGE FLOW PARTICLES (SVG)
+   ========================================================= */
+let flowParticles = [];
+function initFlowParticles(){
+  particlesLayer.innerHTML = '';
+  flowParticles = [];
+  const edgeKeys = Object.keys(edgeElements);
+  const total = state.reducedMotion ? 12 : 46;
+  for(let i=0;i<total;i++){
+    const key = edgeKeys[Math.floor(Math.random()*edgeKeys.length)];
+    const dot = el('circle', {r:2.2, fill:'var(--accent)', opacity:0.85});
+    particlesLayer.appendChild(dot);
+    flowParticles.push({key, t: Math.random(), speed: 0.15+Math.random()*0.25, dot});
+  }
+}
+initFlowParticles();
+function updateFlowParticles(dt){
+  if(!state.showParticles){ particlesLayer.style.display='none'; return; }
+  particlesLayer.style.display='block';
+  flowParticles.forEach(p=>{
+    const e = edgeElements[p.key];
+    if(!e) return;
+    p.t += dt*p.speed*state.speed;
+    if(p.t>1) p.t -= 1;
+    const na = institutions[idx[e.from]], nb = institutions[idx[e.to]];
+    const x = na.x + (nb.x-na.x)*p.t;
+    const y = na.y + (nb.y-na.y)*p.t;
+    p.dot.setAttribute('cx', x);
+    p.dot.setAttribute('cy', y);
+  });
+}
+
+/* =========================================================
+   9. NODE BREATHING ANIMATION
+   ========================================================= */
+function updateBreathing(t){
+  institutions.forEach(n=>{
+    const ne = nodeElements[n.id];
+    const s = 1 + Math.sin(t*1.4 + ne.breathe)*0.035;
+    ne.circle.setAttribute('r', 26*s);
+    const haloOpacity = 0.10 + (Math.sin(t*1.4+ne.breathe)*0.5+0.5)*0.10;
+    ne.halo.setAttribute('opacity', state.nodeStatus[n.id]==='healthy' ? haloOpacity : haloOpacity+0.15);
+  });
+}
+
+/* =========================================================
+   10. MAIN ANIMATION LOOP
+   ========================================================= */
+let lastTime = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now-lastTime)/1000);
+  lastTime = now;
+  drawBg();
+  updateFlowParticles(dt);
+  updateBreathing(now/1000);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* =========================================================
+   11. NODE CARD (hover info)
+   ========================================================= */
+const nodeCard = document.getElementById('nodeCard');
+function nodeStats(id){
+  const i = idx[id];
+  let inSum=0,outSum=0,conn=0;
+  rawEdges.forEach(([a,b,w])=>{
+    if(a===id){ outSum+=w; conn++; }
+    if(b===id){ inSum+=w; conn++; }
+  });
+  const crit = state.criticality ? state.criticality.find(c=>c.id===id) : null;
+  return {inSum,outSum,conn,crit};
+}
+function showNodeCard(id, evt){
+  const n = institutions[idx[id]];
+  const s = nodeStats(id);
+  const st = state.nodeStatus[id];
+  nodeCard.innerHTML = `
+    <div class="name">${n.name}</div>
+    <div class="kv"><span><span class="status-dot" style="background:${statusColor[st]}"></span>Status</span><b>${st[0].toUpperCase()+st.slice(1)}</b></div>
+    <div class="kv"><span>Connections</span><b>${s.conn}</b></div>
+    ${s.crit? `<div class="kv"><span>Criticality</span><b>${s.crit.pct}%</b></div>`:''}
+    <div class="kv"><span>Exposure In</span><b>${s.inSum}</b></div>
+    <div class="kv"><span>Exposure Out</span><b>${s.outSum}</b></div>
+  `;
+  nodeCard.classList.add('show');
+  positionNodeCard(evt);
+}
+function positionNodeCard(evt){
+  nodeCard.style.left = (evt.clientX+16)+'px';
+  nodeCard.style.top = (evt.clientY+10)+'px';
+}
+function hideNodeCard(){ nodeCard.classList.remove('show'); }
+
+function focusNode(id){
+  const conn = new Set([id]);
+  rawEdges.forEach(([a,b])=>{ if(a===id) conn.add(b); if(b===id) conn.add(a); });
+  Object.entries(nodeElements).forEach(([nid,n])=>{
+    n.g.style.filter = conn.has(nid) ? 'none' : 'grayscale(0.6) opacity(0.3)';
+  });
+  Object.entries(edgeElements).forEach(([key,e])=>{
+    const touches = e.from===id || e.to===id;
+    e.line.setAttribute('stroke', touches ? 'var(--accent)' : 'rgba(190,181,178,0.1)');
+  });
+  clearTimeout(focusNode._t);
+  focusNode._t = setTimeout(()=>{ resetHighlight(); }, 3200);
+}
+
+/* =========================================================
+   12. NARRATIVE / EXPLAINER HELPERS
+   ========================================================= */
+const narrative = document.getElementById('narrative');
+const narKicker = document.getElementById('narKicker');
+const narHeadline = document.getElementById('narHeadline');
+const narSub = document.getElementById('narSub');
+function showNarrative(kicker, headline, sub, duration){
+  narKicker.textContent = kicker||'';
+  narHeadline.textContent = headline||'';
+  narSub.textContent = sub||'';
+  narrative.classList.add('show');
+  if(duration){
+    clearTimeout(showNarrative._t);
+    showNarrative._t = setTimeout(()=>narrative.classList.remove('show'), duration);
+  }
+}
+function hideNarrative(){ narrative.classList.remove('show'); }
+
+/* ---- VOICEOVER (Web Speech API — no audio files, no network) ---- */
+const voiceSelect = document.getElementById('voiceSelect');
+let availableVoices = [];
+let chosenVoice = null;
+function loadVoices(){
+  availableVoices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+  const english = availableVoices.filter(v=>/^en/i.test(v.lang));
+  const list = english.length ? english : availableVoices;
+  voiceSelect.innerHTML = '';
+  list.forEach((v,i)=>{
+    const opt = new Option(v.name + ' (' + v.lang + ')', i);
+    voiceSelect.appendChild(opt);
+  });
+  chosenVoice = list[0] || null;
+  voiceSelect._list = list;
+}
+if('speechSynthesis' in window){
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+voiceSelect.addEventListener('change', ()=>{
+  const list = voiceSelect._list || [];
+  chosenVoice = list[+voiceSelect.value] || null;
+});
+function speak(text){
+  if(!state.voiceover || !('speechSynthesis' in window) || !text) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  if(chosenVoice) u.voice = chosenVoice;
+  u.rate = 0.98;
+  u.pitch = 1.0;
+  u.volume = 1.0;
+  window.speechSynthesis.speak(u);
+}
+function stopSpeaking(){
+  if('speechSynthesis' in window) window.speechSynthesis.cancel();
+}
+
+const explainer = document.getElementById('explainer');
+const expTag = document.getElementById('expTag');
+const expTitle = document.getElementById('expTitle');
+const expBody = document.getElementById('expBody');
+const expCalc = document.getElementById('expCalc');
+function showExplainer(tag,title,body,calcHtml){
+  expTag.textContent = tag; expTitle.textContent=title; expBody.textContent=body;
+  if(calcHtml){ expCalc.style.display='block'; expCalc.innerHTML = calcHtml; }
+  else { expCalc.style.display='none'; }
+  explainer.classList.add('show');
+}
+function hideExplainer(){ explainer.classList.remove('show'); }
+
+/* =========================================================
+   13. TIMELINE UI
+   ========================================================= */
+const timelineEl = document.getElementById('timeline');
+stages.forEach((s,i)=>{
+  const item = document.createElement('div');
+  item.className='tl-item';
+  item.dataset.index=i;
+  item.innerHTML = `<div class="num">${s.num}</div><div class="lbl">${s.label}</div>`;
+  item.addEventListener('click', ()=>gotoStage(i));
+  timelineEl.appendChild(item);
+});
+function refreshTimeline(){
+  [...timelineEl.children].forEach((item,i)=>{
+    item.classList.toggle('active', i===state.stageIndex);
+    item.classList.toggle('done', i<state.stageIndex);
+  });
+}
+
+/* =========================================================
+   14. DISTANCE MATRIX PANEL
+   ========================================================= */
+const matrixPanel = document.getElementById('matrixPanel');
+const matrixK = document.getElementById('matrixK');
+const distTable = document.getElementById('distTable');
+function fmt(v){ return v===INF ? '∞' : v; }
+function renderMatrix(matrix, kIdx, changedCells){
+  distTable.innerHTML='';
+  const headRow = document.createElement('tr');
+  headRow.appendChild(document.createElement('th'));
+  institutions.forEach(n=>{
+    const th = document.createElement('th'); th.textContent=n.id; headRow.appendChild(th);
+  });
+  distTable.appendChild(headRow);
+  for(let i=0;i<N;i++){
+    const tr = document.createElement('tr');
+    const th = document.createElement('th'); th.textContent = institutions[i].id; tr.appendChild(th);
+    for(let j=0;j<N;j++){
+      const td = document.createElement('td');
+      td.textContent = fmt(matrix[i][j]);
+      if(kIdx!==undefined && (i===kIdx || j===kIdx)) td.classList.add(i===kIdx?'k-row':'k-col');
+      if(changedCells && changedCells.has(i+'-'+j)) td.classList.add('updated');
+      td.addEventListener('mouseenter', ()=>{
+        if(i===j) return;
+        const path = reconstructPath(i,j);
+        if(path) highlightPath(path);
+      });
+      td.addEventListener('mouseleave', resetHighlight);
+      tr.appendChild(td);
+    }
+    distTable.appendChild(tr);
+  }
+}
+function setMatrixVisible(v){ matrixPanel.classList.toggle('show', v && state.showMatrix); }
+
+/* =========================================================
+   15. RANKING PANEL
+   ========================================================= */
+const rankingEl = document.getElementById('ranking');
+const rankList = document.getElementById('rankList');
+function renderRanking(){
+  state.criticality = computeCriticality();
+  rankList.innerHTML='';
+  state.criticality.slice(0,6).forEach((c,i)=>{
+    const row = document.createElement('div');
+    row.className='rank-row';
+    row.innerHTML = `<div class="pos">${i+1}</div><div class="rname">${c.name}</div>
+      <div class="bar-track"><div class="bar-fill" data-pct="${c.pct}"></div></div>
+      <div class="pct">${c.pct}%</div>`;
+    rankList.appendChild(row);
+  });
+  setTimeout(()=>{
+    [...rankList.children].forEach((row,i)=>{
+      setTimeout(()=>{
+        row.classList.add('in');
+        row.querySelector('.bar-fill').style.width = row.querySelector('.bar-fill').dataset.pct+'%';
+      }, i*140);
+    });
+  }, 60);
+}
+
+/* =========================================================
+   16. PATH FINDER
+   ========================================================= */
+const pfFrom = document.getElementById('pfFrom');
+const pfTo = document.getElementById('pfTo');
+const pfBtn = document.getElementById('pfBtn');
+const pfResult = document.getElementById('pfResult');
+institutions.forEach(n=>{
+  pfFrom.appendChild(new Option(n.name, n.id));
+  pfTo.appendChild(new Option(n.name, n.id));
+});
+pfFrom.value = "A"; pfTo.value = "F";
+pfBtn.addEventListener('click', ()=>{
+  const a = pfFrom.value, b = pfTo.value;
+  if(a===b){
+    pfResult.innerHTML = "Choose two different institutions.";
+    pfResult.classList.add('show');
+    return;
+  }
+  const path = reconstructPath(idx[a], idx[b]);
+  if(!path){
+    pfResult.innerHTML = "No exposure path exists between these institutions.";
+    pfResult.classList.add('show');
+    resetHighlight();
+    return;
+  }
+  const dist = state.fwFinalDist[idx[a]][idx[b]];
+  highlightPath(path);
+  pfResult.innerHTML = `<b>${path.map(id=>institutions[idx[id]].name).join(' → ')}</b><br>Total exposure distance: <b>${dist}</b>`;
+  pfResult.classList.add('show');
+});
+
+/* =========================================================
+   17. SHOCK / PROPAGATION SIMULATION
+   ========================================================= */
+const shockNodeSel = document.getElementById('shockNode');
+institutions.forEach(n=> shockNodeSel.appendChild(new Option(n.name, n.id)));
+shockNodeSel.value = "B";
+shockNodeSel.addEventListener('change', e=> state.shockNodeId = e.target.value);
+
+const shockIntensityInput = document.getElementById('shockIntensity');
+const shockPct = document.getElementById('shockPct');
+shockIntensityInput.addEventListener('input', e=>{
+  state.shockIntensity = +e.target.value;
+  shockPct.textContent = state.shockIntensity+'%';
+});
+
+const flowChainEl = document.getElementById('flowChain');
+
+function neighborsOf(id){
+  const out=[];
+  rawEdges.forEach(([a,b,w])=>{ if(a===id) out.push(b); });
+  return out;
+}
+
+function runShockPropagation(){
+  // reset
+  institutions.forEach(n=> state.nodeStatus[n.id]='healthy');
+  institutions.forEach(n=>applyNodeStatus(n.id));
+
+  const start = state.shockNodeId;
+  const intensity = state.shockIntensity;
+  state.nodeStatus[start] = intensity>=60 ? 'failed' : 'critical';
+  applyNodeStatus(start);
+
+  showNarrative('THEN, A SHOCK HITS', institutions[idx[start]].name, `has lost ${intensity}% of its capacity.`, 2600);
+  speak(`Then, a shock hits. ${institutions[idx[start]].name} has just lost ${intensity} percent of its capacity. Watch how that stress moves outward.`);
+  shakeNode(start);
+
+  // BFS waves with decaying intensity
+  let frontier = [start];
+  let visited = new Set([start]);
+  let wave = 1;
+  let waveIntensity = intensity;
+  const chain = [start];
+
+  function nextWave(){
+    if(waveIntensity < 15 || frontier.length===0 || wave>5){
+      setTimeout(()=>{
+        showNarrative('A LOCAL SHOCK CAN BECOME', 'A SYSTEM-WIDE PROBLEM', '', 3000);
+        speak("A local shock can become a system-wide problem. A failure that started in one institution has now touched much of the network.");
+        renderFlowChain(chain, true);
+      }, 500);
+      return;
+    }
+    const next = [];
+    frontier.forEach(id=>{
+      neighborsOf(id).forEach(nb=>{
+        if(!visited.has(nb)){ visited.add(nb); next.push(nb); }
+      });
+    });
+    waveIntensity = Math.max(0, waveIntensity - 20);
+    next.forEach(id=>{
+      state.nodeStatus[id] = waveIntensity>=40 ? 'critical' : 'warning';
+      applyNodeStatus(id);
+      shakeNode(id, 0.5);
+      chain.push(id);
+    });
+    renderFlowChain(chain, false);
+    const names = next.map(id=>institutions[idx[id]].name).join(', ') || '—';
+    showNarrative(`WAVE ${wave}`, names, 'affected', 2200);
+    if(next.length) speak(`Wave ${wave}: stress reaches ${names}.`);
+    frontier = next;
+    wave++;
+    state.autoTimer = setTimeout(nextWave, 1800/state.speed);
+  }
+  state.autoTimer = setTimeout(nextWave, 1400/state.speed);
+}
+
+function renderFlowChain(chain, done){
+  flowChainEl.innerHTML='';
+  chain.forEach((id,i)=>{
+    if(i>0){
+      const arrow = document.createElement('span'); arrow.className='arrow'; arrow.textContent='→';
+      flowChainEl.appendChild(arrow);
+    }
+    const item = document.createElement('span');
+    item.className = 'fc-item' + (i===chain.length-1 && !done ? ' active':'');
+    item.textContent = institutions[idx[id]].name;
+    flowChainEl.appendChild(item);
+  });
+  flowChainEl.classList.add('show');
+}
+
+function shakeNode(id, mag){
+  const g = nodeElements[id].g;
+  if(state.reducedMotion) return;
+  let t=0; const amp = 3*(mag||1);
+  const iv = setInterval(()=>{
+    t+=1;
+    const dx = (Math.random()-0.5)*amp;
+    g.setAttribute('transform', `translate(${dx},${(Math.random()-0.5)*amp})`);
+    if(t>10){ clearInterval(iv); g.removeAttribute('transform'); }
+  }, 40);
+}
+
+/* =========================================================
+   18. BEFORE / AFTER
+   ========================================================= */
+const beforeAfterEl = document.getElementById('beforeAfter');
+const baBefore = document.getElementById('baBefore');
+const baAfter = document.getElementById('baAfter');
+function renderBeforeAfter(){
+  const healthyAfter = institutions.filter(n=>state.nodeStatus[n.id]==='healthy').length;
+  const criticalAfter = institutions.filter(n=>['critical','failed'].includes(state.nodeStatus[n.id])).length;
+  const stressAfter = Math.min(95, Math.round(((N-healthyAfter)/N)*100)+8);
+  baBefore.innerHTML = `
+    <div class="ba-metric"><span>Healthy institutions</span><b>${N}/${N}</b></div>
+    <div class="ba-metric"><span>Critical institutions</span><b>0</b></div>
+    <div class="ba-metric"><span>System stress</span><b>12%</b></div>`;
+  baAfter.innerHTML = `
+    <div class="ba-metric"><span>Healthy institutions</span><b>${healthyAfter}/${N}</b></div>
+    <div class="ba-metric"><span>Critical institutions</span><b>${criticalAfter}</b></div>
+    <div class="ba-metric"><span>System stress</span><b>${stressAfter}%</b></div>`;
+}
+
+/* =========================================================
+   19. TOGGLES / SPEED / CAMERA
+   ========================================================= */
+document.querySelectorAll('.switch').forEach(sw=>{
+  sw.addEventListener('click', ()=>{
+    const key = sw.dataset.key;
+    state[key] = !state[key];
+    sw.classList.toggle('on', state[key]);
+    if(key==='showMatrix') setMatrixVisible(state.stageIndex>=4);
+    if(key==='voiceover' && !state.voiceover) stopSpeaking();
+  });
+});
+document.querySelectorAll('.speed-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.speed-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    state.speed = +btn.dataset.speed;
+  });
+});
+document.getElementById('motionToggle').addEventListener('click', function(){
+  state.reducedMotion = !state.reducedMotion;
+  this.classList.toggle('active', state.reducedMotion);
+  document.body.classList.toggle('reduced-motion', state.reducedMotion);
+  initBgParticles(); initFlowParticles();
+});
+document.getElementById('triggerShockBtn').addEventListener('click', ()=>{
+  gotoStage(6);
+});
+
+let dragging=false, dragStart={x:0,y:0}, camStart={x:0,y:0};
+const stageEl = document.getElementById('stage');
+stageEl.addEventListener('mousedown', (e)=>{ dragging=true; dragStart={x:e.clientX,y:e.clientY}; camStart={...state.camera}; });
+window.addEventListener('mousemove', (e)=>{
+  if(!dragging) return;
+  state.autoCameraOverride = true;
+  const dx=e.clientX-dragStart.x, dy=e.clientY-dragStart.y;
+  state.camera.x = camStart.x+dx; state.camera.y=camStart.y+dy;
+  applyCamera();
+});
+window.addEventListener('mouseup', ()=> dragging=false);
+stageEl.addEventListener('wheel', (e)=>{
+  e.preventDefault();
+  state.camera.scale = Math.min(2.2, Math.max(0.6, state.camera.scale - e.deltaY*0.001));
+  applyCamera();
+}, {passive:false});
+function applyCamera(){
+  cameraGroup.setAttribute('transform', `translate(${state.camera.x},${state.camera.y}) scale(${state.camera.scale})`);
+}
+function autoCameraPulse(){
+  if(!state.autoCamera || state.autoCameraOverride) return;
+  state.camera.scale = 1 + Math.sin(performance.now()/4000)*0.02;
+  applyCamera();
+}
+setInterval(autoCameraPulse, 60);
+
+/* =========================================================
+   20. STATE MACHINE — STAGE TRANSITIONS
+   ========================================================= */
+function clearOverlays(){
+  stopSpeaking();
+  hideNarrative(); hideExplainer();
+  document.getElementById('pathFinder').classList.remove('show');
+  rankingEl.classList.remove('show');
+  beforeAfterEl.classList.remove('show');
+  flowChainEl.classList.remove('show');
+  resetHighlight();
+  clearTimeout(state.autoTimer);
+}
+
+function stageIntro(){
+  clearOverlays();
+  setEdgeVisible(false); setNodesVisible(false);
+  matrixPanel.classList.remove('show');
+  showNarrative('SYSTEMIC NETWORK SIMULATOR','ONE FINANCIAL SYSTEM','Everything is connected.');
+  speak("Picture nine financial institutions, each one lending to, borrowing from, or guaranteeing the others. This is one financial system, and everything in it is connected.");
+}
+
+function stageNetworkReveal(){
+  clearOverlays();
+  setNodesVisible(true);
+  setTimeout(()=>setEdgeVisible(true), 300);
+  showNarrative('ACT I — THE CONNECTED WORLD','Nine institutions. One network.','Money and exposure move constantly between them.', 3400);
+  showExplainer('NETWORK','A living system', 'Each node is a financial institution. Each glowing line is a channel of exposure between two institutions — money that flows, or could be called upon, in either direction.');
+  speak("Each glowing node here is a financial institution. Each line connecting them is a channel of exposure — money that flows, or could be called upon, between the two. Some connections carry a little. Others carry a lot. Together, they form a network the whole system depends on.");
+}
+
+function stageWeightedGraph(){
+  clearOverlays();
+  setEdgeVisible(true); setNodesVisible(true);
+  const sample = rawEdges[0];
+  highlightPath([sample[0], sample[1]]);
+  showNarrative('WEIGHTED GRAPH', `${institutions[idx[sample[0]]].name} → ${institutions[idx[sample[1]]].name} = ${sample[2]}`, 'The number on each connection represents exposure.', 3200);
+  showExplainer('CONCEPT','Small vs. large exposure','A small weight means low exposure between two institutions. A large weight means a deeper financial dependency. Together, these weighted links form the network we analyze.');
+  speak(`The number on each connection is its weight, a measure of exposure. For example, ${institutions[idx[sample[0]]].name} to ${institutions[idx[sample[1]]].name} is ${sample[2]}. A small weight means a shallow financial relationship. A large weight means a deeper one. This turns a simple diagram into a weighted graph — exactly the kind of structure Floyd-Warshall is built to analyze.`);
+  setTimeout(resetHighlight, 3000);
+}
+
+function stagePathProblem(){
+  clearOverlays();
+  const a='A', f='F';
+  const pathA = ['A','B','D','F'];
+  const pathB = ['A','C','E','F'];
+  const costA = 4+2+5, costB = 7+3+2;
+  showNarrative('THE PROBLEM', `If ${institutions[idx[a]].name} wants to reach ${institutions[idx[f]].name}...`, 'Multiple exposure pathways exist.', 3000);
+  speak(`Say ${institutions[idx[a]].name} needs to trace its exposure all the way to ${institutions[idx[f]].name}. There's more than one way to get there.`);
+  setTimeout(()=>{
+    highlightPath(pathA);
+    showExplainer('PATH A', pathA.map(id=>institutions[idx[id]].name).join(' → '), `Cost: 4 + 2 + 5 = ${costA}`);
+    speak(`One path runs through Nova Capital and Apex Finance, costing ${costA}. Another runs through Meridian Bank and Horizon Fund, costing ${costB}.`);
+  }, 1500);
+  setTimeout(()=>{
+    showExplainer('SHORTEST EXPOSURE PATH', `${costA}`, `Path A (${costA}) beats Path B (${costB}). But is it really the shortest possible route? Floyd–Warshall checks every institution as a potential shortcut.`);
+    speak(`The first path is shorter. But is it truly the shortest possible route through the whole network? To know for certain, we have to check every institution as a possible shortcut.`);
+  }, 4200);
+}
+
+let fwAnimTimer = null;
+function stageFloydWarshall(){
+  clearOverlays();
+  setEdgeVisible(true); setNodesVisible(true);
+  state.showMatrix = true;
+  document.querySelector('.switch[data-key="showMatrix"]').classList.add('on');
+  setMatrixVisible(true);
+  showNarrative('FLOYD–WARSHALL', 'Checking every possible shortcut', 'For each institution K, we ask: does routing through K make any path shorter?', 3400);
+  speak("This is the Floyd-Warshall algorithm. For every pair of institutions, it asks a simple question, over and over: would routing through this next institution make the path shorter? It starts from the distances we already know, and infinity everywhere there's no direct connection. Then, one institution at a time, it looks for shortcuts.");
+  renderMatrix(baseMatrix, undefined, new Set());
+  state.fwPointer = 0;
+  runFWStepAnimated(true);
+}
+
+function runFWStepAnimated(auto){
+  clearTimeout(fwAnimTimer);
+  if(state.fwPointer >= state.fwSteps.length){
+    showExplainer('FLOYD–WARSHALL COMPLETE','All shortest paths found', 'Every pair of institutions now has its true shortest exposure distance, accounting for every possible intermediary.');
+    speak("Every pair of institutions now has its true shortest exposure distance, accounting for every possible intermediary along the way.");
+    renderMatrix(state.fwFinalDist, undefined, new Set());
+    return;
+  }
+  const step = state.fwSteps[state.fwPointer];
+  const kName = institutions[step.k].name;
+  const changedSet = new Set(step.changes.map(c=>c.i+'-'+c.j));
+  renderMatrix(step.snapshot, step.k, changedSet);
+  matrixK.textContent = `K = ${kName}`;
+
+  Object.values(nodeElements).forEach(n=>n.g.style.filter='grayscale(0.5) opacity(0.5)');
+  nodeElements[institutions[step.k].id].g.style.filter='none';
+
+  if(step.changes.length>0){
+    const c = step.changes[0];
+    const iName = institutions[c.i].name, jName = institutions[c.j].name;
+    showExplainer(`K = ${kName}`, `Checking through ${kName}`, `Can going through ${kName} shorten the path from ${iName} to ${jName}?`,
+      `<span class="old">${c.oldV===INF?'∞':c.oldV}</span> → ${c.viaIk} + ${c.viaKj} = <span class="new">${c.newV}</span>`);
+    speak(`Checking through ${kName}. Going from ${iName} to ${jName} directly costs ${c.oldV===INF?'infinity, meaning no direct path':c.oldV}. Through ${kName}, it's ${c.viaIk} plus ${c.viaKj}, which is ${c.newV}. That's shorter, so we update it.`);
+    const path = [institutions[c.i].id, institutions[step.k].id, institutions[c.j].id];
+    highlightPath(path);
+  } else {
+    showExplainer(`K = ${kName}`, `No shorter path found`, `Routing through ${kName} does not improve any pair this round.`);
+    speak(`Checking through ${kName}. No shorter path found this round.`);
+  }
+
+  state.fwPointer++;
+  if(auto && state.playing){
+    fwAnimTimer = setTimeout(()=>runFWStepAnimated(true), 2200/state.speed);
+  }
+}
+
+function stageCriticality(){
+  clearOverlays();
+  setMatrixVisible(false);
+  showNarrative('WHO CONNECTS THE SYSTEM?','Simulation Criticality Score', 'How often each institution sits on a shortest exposure path.', 2600);
+  speak("After running the algorithm across every pair, we can count how often each institution shows up as a stepping stone on someone else's shortest path. That's this simulation's criticality score — a measure of how central an institution is to the network's plumbing, not a real-world systemic risk rating.");
+  renderRanking();
+  rankingEl.classList.add('show');
+  Object.values(nodeElements).forEach(n=>n.g.style.filter='none');
+  setTimeout(()=>{
+    if(state.criticality && state.criticality[0]){
+      const topId = state.criticality[0].id;
+      nodeElements[topId].g.style.filter='none';
+      shakeNode(topId, 0.3);
+      speak(`${institutions[idx[topId]].name} comes out on top — the institution most other shortest paths quietly rely on.`);
+    }
+  }, 3200);
+}
+
+function stageShock(){
+  clearOverlays();
+  rankingEl.classList.remove('show');
+  document.getElementById('pathFinder').classList.remove('show');
+  runShockPropagation();
+}
+
+function stagePropagation(){
+  clearOverlays();
+  showNarrative('PROPAGATION','The shock is spreading', 'Watch how stress moves outward through connected institutions.', 2600);
+  speak("The shock is spreading. Watch how stress moves outward through connected institutions, wave by wave.");
+  // re-run visualization if not already run (in case user jumped here)
+  if(Object.values(state.nodeStatus).every(s=>s==='healthy')){
+    runShockPropagation();
+  } else {
+    renderFlowChain(Object.entries(state.nodeStatus).filter(([id,s])=>s!=='healthy').map(([id])=>id), true);
+  }
+}
+
+function stageSystemicRisk(){
+  clearOverlays();
+  showNarrative('LOCAL FAILURE → NETWORK TRANSMISSION → SYSTEMIC RISK','UNDERSTANDING THE NETWORK MEANS UNDERSTANDING THE RISK.', '', 4000);
+  speak("Local failure, network transmission, critical intermediaries, multiple institutions, systemic risk. Understanding the network means understanding the risk. Simulation complete.");
+  renderBeforeAfter();
+  setTimeout(()=> beforeAfterEl.classList.add('show'), 1600);
+  document.getElementById('pathFinder').classList.add('show');
+}
+
+const stageFns = [
+  stageIntro, stageNetworkReveal, stageWeightedGraph, stagePathProblem,
+  stageFloydWarshall, stageCriticality, stageShock, stagePropagation, stageSystemicRisk
+];
+
+function gotoStage(i){
+  i = Math.max(0, Math.min(stages.length-1, i));
+  state.stageIndex = i;
+  refreshTimeline();
+  beforeAfterEl.classList.remove('show');
+  stageFns[i]();
+}
+
+/* =========================================================
+   21. TRANSPORT CONTROLS
+   ========================================================= */
+document.getElementById('playBtn').addEventListener('click', ()=>{
+  state.playing = true;
+  advanceLoop();
+});
+document.getElementById('pauseBtn').addEventListener('click', ()=>{
+  state.playing = false;
+  clearTimeout(state.autoTimer);
+  clearTimeout(fwAnimTimer);
+  stopSpeaking();
+});
+document.getElementById('stepBtn').addEventListener('click', ()=>{
+  if(state.stageIndex===4){ // Floyd-Warshall stage: step the algorithm
+    runFWStepAnimated(false);
+  } else {
+    gotoStage(state.stageIndex+1);
+  }
+});
+document.getElementById('restartBtn').addEventListener('click', ()=>{
+  stopSpeaking();
+  institutions.forEach(n=> state.nodeStatus[n.id]='healthy');
+  institutions.forEach(n=>applyNodeStatus(n.id));
+  state.fwPointer = 0;
+  gotoStage(0);
+});
+
+let advanceTimer=null;
+function advanceLoop(){
+  clearTimeout(advanceTimer);
+  if(!state.playing) return;
+  if(state.stageIndex===4){
+    runFWStepAnimated(true);
+    // once FW finishes, auto-advance
+    const checkDone = setInterval(()=>{
+      if(state.fwPointer>=state.fwSteps.length){
+        clearInterval(checkDone);
+        if(state.playing) setTimeout(()=>{ gotoStage(state.stageIndex+1); advanceLoop(); }, 2600/state.speed);
+      }
+    }, 400);
+    return;
+  }
+  const dwell = state.stageIndex===0 ? 3400 : state.stageIndex===8 ? 999999 : 5200;
+  advanceTimer = setTimeout(()=>{
+    if(!state.playing) return;
+    if(state.stageIndex < stages.length-1){
+      gotoStage(state.stageIndex+1);
+      advanceLoop();
+    } else {
+      state.playing=false;
+    }
+  }, dwell/state.speed);
+}
+
+/* =========================================================
+   22. START
+   ========================================================= */
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  document.getElementById('startOverlay').style.display='none';
+  gotoStage(0);
+  state.playing = true;
+  advanceLoop();
+});
+
+/* initial paint (hidden behind start overlay) */
+refreshTimeline();
+
+/* keyboard accessibility */
+window.addEventListener('keydown', (e)=>{
+  if(e.key===' '){ e.preventDefault(); document.getElementById(state.playing?'pauseBtn':'playBtn').click(); }
+  if(e.key==='ArrowRight'){ gotoStage(state.stageIndex+1); }
+  if(e.key==='ArrowLeft'){ gotoStage(state.stageIndex-1); }
+});
+
+})();
+</script>
+</body>
+</html>
